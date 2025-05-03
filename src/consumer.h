@@ -3,7 +3,7 @@
 
 #include "common.h"
 
-// --- Function Declarations ---
+
 
 /*
  * consumer_run
@@ -19,7 +19,7 @@
  * Returns:
  *   Does not return; calls exit().
  */
-// Removed sem_id parameter
+
 void consumer_run(int consumer_id, queue_t *queue);
 
-#endif // CONSUMER_H
+#endif
