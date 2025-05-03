@@ -1,9 +1,9 @@
 #include "ipc_manager.h"
-#include "producer.h" // For producer_run prototype
-#include "consumer.h" // For consumer_run prototype
-#include "utils.h"    // For print_info, print_error
+#include "producer.h"
+#include "consumer.h"
+#include "utils.h"
 
-// --- Static Global Variables (Module Scope) ---
+
 static int s_semaphore_id = -1;
 static int s_shared_memory_id = -1;
 static queue_t *s_shared_queue = NULL;
@@ -14,15 +14,15 @@ static int s_producer_count = 0;
 static pid_t s_consumer_pids[MAX_CONSUMERS];
 static int s_consumer_count = 0;
 
-// Global flag definition
+
 volatile sig_atomic_t g_terminate_flag = 0;
 
-// --- Static Function Declarations ---
+
 static void remove_pid_from_list(pid_t pid_list[], int *count, pid_t pid_to_remove);
 static void cleanup_processes(void);
 static void parent_signal_handler(int sig);
 
-// --- Union for semctl ---
+
 union semun {
     int val;
     struct semid_ds *buf;
@@ -31,17 +31,17 @@ union semun {
 };
 
 
-// --- Initialization and Cleanup ---
-// ... (initialize_ipc, cleanup_resources, parent_signal_handler, register_parent_signal_handlers remain the same) ...
+
+
 int initialize_ipc(void) {
-    // 1. Create Shared Memory
+
     s_shared_memory_id = shmget(IPC_PRIVATE, sizeof(queue_t), IPC_CREAT | IPC_EXCL | 0600);
     if (s_shared_memory_id == -1) {
         print_error("IPC Init", "shmget failed");
         return -1;
     }
 
-    // 2. Attach Shared Memory
+
     s_shared_queue = (queue_t *)shmat(s_shared_memory_id, NULL, 0);
     if (s_shared_queue == (void *)-1) {
         print_error("IPC Init", "shmat failed");
@@ -50,7 +50,7 @@ int initialize_ipc(void) {
         return -1;
     }
 
-    // 3. Initialize Queue Structure
+
     s_shared_queue->head_idx = 0;
     s_shared_queue->tail_idx = 0;
     s_shared_queue->free_slots = QUEUE_CAPACITY;
@@ -58,7 +58,7 @@ int initialize_ipc(void) {
     s_shared_queue->extracted_count = 0;
     memset(s_shared_queue->messages, 0, sizeof(s_shared_queue->messages));
 
-    // 4. Create Semaphores
+
     s_semaphore_id = semget(IPC_PRIVATE, NUM_SEMAPHORES, IPC_CREAT | IPC_EXCL | 0600);
     if (s_semaphore_id == -1) {
         print_error("IPC Init", "semget failed");
@@ -69,13 +69,13 @@ int initialize_ipc(void) {
         return -1;
     }
 
-    // 5. Initialize Semaphores
+
     unsigned short sem_values[NUM_SEMAPHORES];
     sem_values[SEM_MUTEX_IDX] = 1;
     sem_values[SEM_EMPTY_IDX] = QUEUE_CAPACITY;
     sem_values[SEM_FULL_IDX] = 0;
 
-    union semun arg; // Use the defined union
+    union semun arg;
     arg.array = sem_values;
 
     if (semctl(s_semaphore_id, 0, SETALL, arg) == -1) {
@@ -95,12 +95,12 @@ int initialize_ipc(void) {
 
 void cleanup_resources(void) {
     print_info("Cleanup", "Starting resource cleanup...");
-    restore_terminal(); // Restore terminal settings if modified
+    restore_terminal();
 
-    // Signal any remaining children to terminate and wait for them
+
     cleanup_processes();
 
-    // Detach Shared Memory
+
     if (s_shared_queue != NULL) {
         if (shmdt(s_shared_queue) == -1) {
             print_error("Cleanup", "shmdt failed");
@@ -108,10 +108,10 @@ void cleanup_resources(void) {
         s_shared_queue = NULL;
     }
 
-    // Remove Shared Memory Segment (only if ID is valid)
+
     if (s_shared_memory_id != -1) {
         if (shmctl(s_shared_memory_id, IPC_RMID, NULL) == -1) {
-            // Check errno - IPC_RMID fails if already removed or invalid ID
+
             if (errno != EINVAL && errno != EIDRM) {
                 print_error("Cleanup", "shmctl IPC_RMID failed");
             }
@@ -119,7 +119,7 @@ void cleanup_resources(void) {
         s_shared_memory_id = -1;
     }
 
-    // Remove Semaphores (only if ID is valid)
+
     if (s_semaphore_id != -1) {
         if (semctl(s_semaphore_id, 0, IPC_RMID) == -1) {
             if (errno != EINVAL && errno != EIDRM) {
@@ -145,7 +145,7 @@ void register_parent_signal_handlers(void) {
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = parent_signal_handler;
     sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0; // No SA_RESTART
+    sa.sa_flags = 0;
 
     if (sigaction(SIGINT, &sa, NULL) == -1 || sigaction(SIGTERM, &sa, NULL) == -1) {
         print_error("Signal", "Failed to register parent signal handlers");
@@ -153,7 +153,7 @@ void register_parent_signal_handlers(void) {
     }
 }
 
-// --- Process Management ---
+
 
 static void remove_pid_from_list(pid_t pid_list[], int *count, pid_t pid_to_remove) {
     int i, found_idx = -1;
@@ -311,7 +311,7 @@ static void cleanup_processes(void) {
     print_info("Cleanup", "Finished waiting for children.");
 }
 
-// --- Status and Info ---
+
 void display_status(void) {
     if (semaphore_op(SEM_MUTEX_IDX, -1) == -1) {
         if (errno == ECANCELED || g_terminate_flag) return;
@@ -344,7 +344,7 @@ unsigned long get_added_count(void) { return s_shared_queue ? s_shared_queue->ad
 unsigned long get_extracted_count(void) { return s_shared_queue ? s_shared_queue->extracted_count : 0; }
 
 
-// --- Semaphore Operations ---
+
 
 /*
  * semaphore_op
@@ -360,23 +360,23 @@ int semaphore_op(int sem_idx, int op) {
     struct sembuf sb;
     sb.sem_num = (unsigned short)sem_idx;
     sb.sem_op = (short)op;
-    sb.sem_flg = 0; // No SEM_UNDO needed for this logic
+    sb.sem_flg = 0;
 
-    // FIX: Do NOT loop on EINTR here. Return -1 and let caller check flags.
+
     if (semop(s_semaphore_id, &sb, 1) == -1) {
-        // Avoid printing error if sem ID removed during cleanup (EIDRM, EINVAL)
-        // or if interrupted by signal (EINTR) - caller handles EINTR.
+
+
         if (errno != EIDRM && errno != EINVAL && errno != EINTR) {
             char msg[100];
             snprintf(msg, sizeof(msg), "semop failed for sem_idx %d, op %d", sem_idx, op);
             print_error("Semaphore", msg);
         }
-        return -1; // Return error, including EINTR
+        return -1;
     }
-    return 0; // Success
+    return 0;
 }
 
-// --- Shared Memory Access ---
+
 queue_t* get_shared_queue(void) {
     return s_shared_queue;
 }
